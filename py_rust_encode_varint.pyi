@@ -37,3 +37,98 @@ def encode_varint(n: int) -> bytes:
     """
     ...
 
+def decode_posting_list(data: bytes) -> list[tuple[int, int, int]]:
+    """
+    Decode a posting list from compressed bytes.
+    
+    Args:
+        data: Compressed bytes representation of the posting list.
+    
+    Returns:
+        List of (doc_id, content_freq, title_freq) tuples.
+    
+    Raises:
+        ValueError: If data contains invalid varint encoding.
+    """
+    ...
+
+def read_term_at_offset(
+    file_path: str,
+    offset: int
+) -> tuple[str, int, int, list[tuple[int, int, int]], int] | None:
+    """
+    Read a term from a binary block file at a specific offset.
+    
+    Args:
+        file_path: Path to the binary block file.
+        offset: Byte offset where the term starts.
+    
+    Returns:
+        Tuple of (term, doc_freq_content, doc_freq_title, postings, next_offset)
+        or None if end of file reached.
+        
+    Raises:
+        IOError: If file cannot be read.
+        ValueError: If data is malformed.
+    """
+    ...
+
+def iter_block_terms(
+    file_path: str
+) -> list[tuple[str, int, int, list[tuple[int, int, int]]]]:
+    """
+    Iterate over all terms in a binary block file.
+    
+    More efficient than repeated read_term_at_offset calls as it reads
+    sequentially through the file.
+    
+    Args:
+        file_path: Path to the binary block file.
+    
+    Returns:
+        List of (term, doc_freq_content, doc_freq_title, postings) tuples.
+    
+    Raises:
+        IOError: If file cannot be read.
+        ValueError: If data is malformed.
+    """
+    ...
+
+def write_binary_block(
+    terms: list[str],
+    doc_freqs: list[tuple[int, int]],
+    postings: list[list[tuple[int, int, int]]],
+    output_path: str
+) -> None:
+    """
+    Write a binary block from dictionaries.
+    
+    Args:
+        terms: List of terms (must be sorted alphabetically).
+        doc_freqs: List of (doc_freq_content, doc_freq_title) tuples.
+        postings: List of posting lists, where each posting list contains
+                  (doc_id, content_freq, title_freq) tuples.
+        output_path: Path to output binary block file.
+    
+    Raises:
+        ValueError: If terms, doc_freqs, and postings have different lengths.
+        IOError: If file cannot be written.
+    """
+    ...
+
+def get_block_stats(file_path: str) -> tuple[int, int]:
+    """
+    Get block statistics without loading all data.
+    
+    Fast operation that only reads the file header and metadata.
+    
+    Args:
+        file_path: Path to the binary block file.
+    
+    Returns:
+        Tuple of (num_terms, file_size_bytes).
+    
+    Raises:
+        IOError: If file cannot be read.
+    """
+    ...
