@@ -378,6 +378,82 @@ fn iter_block_terms<'py>(py: Python<'py>, file_path: &str) -> PyResult<Bound<'py
     Ok(PyList::new(py, results)?)
 }
 
+/// Merge and sort multiple compressed posting lists efficiently.
+///
+/// Takes multiple compressed posting list bytes, decodes them, merges them,
+/// sorts according to the sort_keys, and returns a single compressed posting list.
+///
+/// Args:
+///     postings_bytes_list: List of compressed posting list bytes.
+///     sort_keys: Sort specification (same as encode_posting_list).
+///
+/// Returns:
+///     Single compressed bytes representation of merged and sorted postings.
+#[pyfunction]
+#[pyo3(signature = (postings_bytes_list, sort_keys="(-1, -0)"))]
+fn merge_posting_lists(
+    postings_bytes_list: Bound<'_, PyList>,
+    sort_keys: Option<&str>,
+) -> PyResult<Vec<u8>> {
+    if postings_bytes_list.len() == 0 {
+        return Ok(Vec::new());
+    }
+
+    // Collect all decoded postings
+    let mut all_postings: Vec<(i32, i32, i32)> = Vec::new();
+
+    // Decode all posting lists into a single vec
+    for item in postings_bytes_list.iter() {
+        // Extract bytes from Python bytes object
+        let posting_bytes: &[u8] = item.extract()?;
+        
+        let mut pos = 0;
+        let mut prev_doc_id = 0i32;
+
+        while pos < posting_bytes.len() {
+            // Decode delta
+            let (delta, consumed) = decode_varint(&posting_bytes[pos..])?;
+            pos += consumed;
+
+            // Decode content_freq
+            let (content_freq, consumed) = decode_varint(&posting_bytes[pos..])?;
+            pos += consumed;
+
+            // Decode title_freq
+            let (title_freq, consumed) = decode_varint(&posting_bytes[pos..])?;
+            pos += consumed;
+
+            // Reconstruct doc_id from delta
+            prev_doc_id += delta as i32;
+            all_postings.push((prev_doc_id, content_freq as i32, title_freq as i32));
+        }
+    }
+
+    // Parse sort keys
+    let keys = SortKeys::from_string(sort_keys.unwrap_or("(-1, -0)"))?;
+
+    // Sort the merged postings
+    all_postings.sort_unstable_by_key(|x| keys.make_sort_key(x));
+
+    // Encode back to compressed format
+    let mut result = Vec::with_capacity(all_postings.len() * 15);
+    let mut prev_doc_id = 0i32;
+
+    for (doc_id, content_freq, title_freq) in all_postings {
+        // Delta encode document ID
+        let delta = doc_id - prev_doc_id;
+        prev_doc_id = doc_id;
+
+        // Encode varints
+        encode_varint_to_vec(&mut result, delta as u64);
+        encode_varint_to_vec(&mut result, content_freq as u64);
+        encode_varint_to_vec(&mut result, title_freq as u64);
+    }
+
+    Ok(result)
+}
+
+
 /// Write a binary block from dictionaries.
 ///
 /// Args:
@@ -470,5 +546,6 @@ fn py_rust_encode_varint(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(iter_block_terms, m)?)?;
     m.add_function(wrap_pyfunction!(write_binary_block, m)?)?;
     m.add_function(wrap_pyfunction!(get_block_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(merge_posting_lists, m)?)?;
     Ok(())
 }

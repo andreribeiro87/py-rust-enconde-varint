@@ -142,3 +142,33 @@ def get_block_stats(file_path: str) -> tuple[int, int]:
         IOError: If file cannot be read.
     """
     ...
+
+def merge_posting_lists(
+    postings_bytes_list: list[bytes],
+    sort_keys: str | None = "(-1, -0)"
+) -> bytes:
+    """
+    Merge and sort multiple compressed posting lists efficiently.
+    
+    Takes multiple compressed posting list bytes, decodes them, merges them,
+    sorts according to the sort_keys, and returns a single compressed posting list.
+    
+    Args:
+        postings_bytes_list: List of compressed posting list bytes (varint encoded).
+        sort_keys: Optional sort key specification string. Format: "(field0, field1, ...)" 
+                   where field can be:
+                   - "0" for doc_id (ascending)
+                   - "1" for content_freq (ascending)
+                   - "2" for title_freq (ascending)
+                   - "-0" for doc_id (descending)
+                   - "-1" for content_freq (descending)
+                   - "-2" for title_freq (descending)
+                   Default: "(-1, -0)" sorts by content_freq descending, then doc_id descending.
+    
+    Returns:
+        Single compressed bytes representation of merged and sorted postings.
+    
+    Raises:
+        ValueError: If data contains invalid varint encoding or sort_keys is invalid.
+    """
+    ...
