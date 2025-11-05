@@ -2,7 +2,8 @@
 
 def encode_posting_list(
     postings: list[tuple[int, int, int]],
-    assume_sorted: bool = False
+    assume_sorted: bool = False,
+    sort_keys: str | None = "(-1, -0)"
 ) -> bytes:
     """
     Encode a posting list using delta encoding and varint compression.
@@ -14,6 +15,15 @@ def encode_posting_list(
     Args:
         postings: List of (doc_id, content_freq, title_freq) tuples.
         assume_sorted: If True, skip sorting (postings already sorted by doc_id).
+        sort_keys: Optional sort key specification string. Format: "(field0, field1, ...)" 
+                   where field can be:
+                   - "0" for doc_id (ascending)
+                   - "1" for content_freq (ascending)
+                   - "2" for title_freq (ascending)
+                   - "-0" for doc_id (descending)
+                   - "-1" for content_freq (descending)
+                   - "-2" for title_freq (descending)
+                   Default: "(-1, -0)" sorts by content_freq descending, then doc_id descending.
     
     Returns:
         Compressed bytes representation of the posting list.

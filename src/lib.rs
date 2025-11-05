@@ -1,7 +1,96 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyTuple};
-use std::io::{Read, Write, BufReader, BufWriter};
+use pyo3::types::{PyFunction, PyList, PyTuple};
 use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Write};
+
+/// Defines which fields to use as sort keys and their order
+#[derive(Debug, Clone)]
+struct SortKeys {
+    keys: Vec<(SortField, SortOrder)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SortField {
+    DocId,       // Index 0
+    ContentFreq, // Index 1
+    TitleFreq,   // Index 2
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SortOrder {
+    Asc,
+    Desc,
+}
+
+impl SortKeys {
+    /// Parse sort keys from a string like "(-1, -0)" or "(1, 0, 2)"
+    fn from_string(s: &str) -> PyResult<Self> {
+        let s = s.trim();
+        if !s.starts_with('(') || !s.ends_with(')') {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Sort keys must be a tuple like '(1, 0)' or '(-1, -0)', got: '{}'",
+                s
+            )));
+        }
+
+        let inner = &s[1..s.len() - 1];
+        let parts: Vec<&str> = inner.split(',').map(|p| p.trim()).collect();
+
+        let mut keys = Vec::new();
+        for part in parts {
+            if part.is_empty() {
+                continue;
+            }
+
+            let (order, field_str) = if let Some(stripped) = part.strip_prefix('-') {
+                (SortOrder::Desc, stripped)
+            } else {
+                (SortOrder::Asc, part)
+            };
+
+            let field = match field_str {
+                "0" => SortField::DocId,
+                "1" => SortField::ContentFreq,
+                "2" => SortField::TitleFreq,
+                _ => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "Invalid field index: '{}'. Use 0 (doc_id), 1 (content_freq), or 2 (title_freq)",
+                        field_str
+                    )));
+                }
+            };
+
+            keys.push((field, order));
+        }
+
+        if keys.is_empty() {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Sort keys cannot be empty",
+            ));
+        }
+
+        Ok(SortKeys { keys })
+    }
+
+    /// Create sort key tuple for use with sort_unstable_by_key
+    fn make_sort_key(&self, posting: &(i32, i32, i32)) -> Vec<i32> {
+        self.keys
+            .iter()
+            .map(|(field, order)| {
+                let value = match field {
+                    SortField::DocId => posting.0,
+                    SortField::ContentFreq => posting.1,
+                    SortField::TitleFreq => posting.2,
+                };
+
+                match order {
+                    SortOrder::Asc => value,
+                    SortOrder::Desc => -value,
+                }
+            })
+            .collect()
+    }
+}
 
 /// Encode a posting list using delta encoding and varint compression.
 ///
@@ -12,14 +101,19 @@ use std::fs::File;
 /// Args:
 ///     postings: List of (doc_id, content_freq, title_freq) tuples.
 ///     assume_sorted: If True, skip sorting (postings already sorted by doc_id).
+///     sort_keys: Custom sort keys as string tuple, e.g. "(-1, -0)" means sort by
+///                title_freq descending, then content_freq descending.
+///                Indices: 0=doc_id, 1=content_freq, 2=title_freq
+///                Prefix with '-' for descending order.
 ///
 /// Returns:
 ///     Compressed bytes representation of the posting list.
 #[pyfunction]
-#[pyo3(signature = (postings, assume_sorted=false))]
+#[pyo3(signature = (postings, assume_sorted=false, sort_keys="(-1, -0)"))]
 fn encode_posting_list(
     postings: Bound<'_, PyList>,
     assume_sorted: bool,
+    sort_keys: Option<&str>,
 ) -> PyResult<Vec<u8>> {
     let len = postings.len();
     if len == 0 {
@@ -43,7 +137,11 @@ fn encode_posting_list(
 
     // Sort if needed
     if !assume_sorted {
-        postings_vec.sort_unstable_by_key(|x| x.0); // unstable is faster
+        if let Some(keys_str) = sort_keys {
+            // Custom sort keys
+            let keys = SortKeys::from_string(keys_str)?;
+            postings_vec.sort_unstable_by_key(|x| keys.make_sort_key(x));
+        }
     }
 
     // Pre-allocate buffer with estimated size
@@ -83,7 +181,7 @@ fn encode_varint(n: i64) -> PyResult<Vec<u8>> {
             "Varint encoding only supports non-negative integers",
         ));
     }
-    
+
     let mut result = Vec::new();
     encode_varint_to_vec(&mut result, n as u64);
     Ok(result)
@@ -94,23 +192,23 @@ fn encode_varint(n: i64) -> PyResult<Vec<u8>> {
 fn decode_varint(data: &[u8]) -> PyResult<(u64, usize)> {
     let mut result = 0u64;
     let mut shift = 0;
-    
+
     for (i, &byte) in data.iter().enumerate() {
         if i >= 10 {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "Invalid varint encoding: too many bytes",
             ));
         }
-        
+
         result |= ((byte & 0x7F) as u64) << shift;
-        
+
         if (byte & 0x80) == 0 {
             return Ok((result, i + 1));
         }
-        
+
         shift += 7;
     }
-    
+
     Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
         "Invalid varint encoding: unexpected end of data",
     ))
@@ -128,26 +226,26 @@ fn decode_posting_list<'py>(py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py,
     let mut postings = Vec::new();
     let mut pos = 0;
     let mut prev_doc_id = 0i32;
-    
+
     while pos < data.len() {
         // Decode delta
         let (delta, consumed) = decode_varint(&data[pos..])?;
         pos += consumed;
-        
+
         // Decode content_freq
         let (content_freq, consumed) = decode_varint(&data[pos..])?;
         pos += consumed;
-        
+
         // Decode title_freq
         let (title_freq, consumed) = decode_varint(&data[pos..])?;
         pos += consumed;
-        
+
         // Reconstruct doc_id from delta
         prev_doc_id += delta as i32;
-        
+
         postings.push((prev_doc_id, content_freq as i32, title_freq as i32));
     }
-    
+
     Ok(PyList::new(py, postings)?)
 }
 
@@ -167,45 +265,46 @@ fn read_term_at_offset<'py>(
     offset: u64,
 ) -> PyResult<Option<Bound<'py, PyTuple>>> {
     let mut file = BufReader::new(File::open(file_path)?);
-    
+
     // Seek to offset
     use std::io::Seek;
     file.seek(std::io::SeekFrom::Start(offset))?;
-    
+
     // Read term length (4 bytes)
     let mut term_len_bytes = [0u8; 4];
     if file.read_exact(&mut term_len_bytes).is_err() {
         return Ok(None);
     }
     let term_len = u32::from_le_bytes(term_len_bytes) as usize;
-    
+
     // Read term bytes
     let mut term_bytes = vec![0u8; term_len];
     file.read_exact(&mut term_bytes)?;
-    let term = String::from_utf8(term_bytes)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid UTF-8: {}", e)))?;
-    
+    let term = String::from_utf8(term_bytes).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid UTF-8: {}", e))
+    })?;
+
     // Read varints into buffer for decoding
     let mut varint_buffer = vec![0u8; 128]; // Should be enough for 3 varints
     file.read_exact(&mut varint_buffer[..10])?; // Read at least enough for first varint
-    
+
     let (doc_freq_content, consumed1) = decode_varint(&varint_buffer)?;
     let (doc_freq_title, consumed2) = decode_varint(&varint_buffer[consumed1..])?;
     let (posting_list_len, consumed3) = decode_varint(&varint_buffer[consumed1 + consumed2..])?;
-    
+
     // Calculate actual bytes consumed for varints
     let total_varint_bytes = consumed1 + consumed2 + consumed3;
-    
+
     // Read posting list data
     let mut posting_list_data = vec![0u8; posting_list_len as usize];
     file.read_exact(&mut posting_list_data)?;
-    
+
     // Decode postings
     let postings = decode_posting_list(py, &posting_list_data)?;
-    
+
     // Calculate next offset
     let next_offset = offset + 4 + term_len as u64 + total_varint_bytes as u64 + posting_list_len;
-    
+
     let result_items = vec![
         term.into_pyobject(py)?.into_any(),
         doc_freq_content.into_pyobject(py)?.into_any(),
@@ -214,7 +313,7 @@ fn read_term_at_offset<'py>(
         next_offset.into_pyobject(py)?.into_any(),
     ];
     let result = PyTuple::new(py, &result_items)?;
-    
+
     Ok(Some(result))
 }
 
@@ -228,14 +327,14 @@ fn read_term_at_offset<'py>(
 #[pyfunction]
 fn iter_block_terms<'py>(py: Python<'py>, file_path: &str) -> PyResult<Bound<'py, PyList>> {
     let mut file = BufReader::new(File::open(file_path)?);
-    
+
     // Read header (num_terms)
     let mut num_terms_bytes = [0u8; 8];
     file.read_exact(&mut num_terms_bytes)?;
     let num_terms = u64::from_le_bytes(num_terms_bytes);
-    
+
     let mut results = Vec::with_capacity(num_terms as usize);
-    
+
     for _ in 0..num_terms {
         // Read term length
         let mut term_len_bytes = [0u8; 4];
@@ -243,27 +342,28 @@ fn iter_block_terms<'py>(py: Python<'py>, file_path: &str) -> PyResult<Bound<'py
             break;
         }
         let term_len = u32::from_le_bytes(term_len_bytes) as usize;
-        
+
         // Read term
         let mut term_bytes = vec![0u8; term_len];
         file.read_exact(&mut term_bytes)?;
-        let term = String::from_utf8(term_bytes)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid UTF-8: {}", e)))?;
-        
+        let term = String::from_utf8(term_bytes).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid UTF-8: {}", e))
+        })?;
+
         // Read varints (doc_freq_content, doc_freq_title, posting_list_len)
         let mut varint_buffer = vec![0u8; 64];
         file.read_exact(&mut varint_buffer[..20])?;
-        
+
         let (doc_freq_content, consumed1) = decode_varint(&varint_buffer)?;
         let (doc_freq_title, consumed2) = decode_varint(&varint_buffer[consumed1..])?;
         let (posting_list_len, _) = decode_varint(&varint_buffer[consumed1 + consumed2..])?;
-        
+
         // Read posting list
         let mut posting_list_data = vec![0u8; posting_list_len as usize];
         file.read_exact(&mut posting_list_data)?;
-        
+
         let postings = decode_posting_list(py, &posting_list_data)?;
-        
+
         let tuple_items = vec![
             term.into_pyobject(py)?.into_any(),
             doc_freq_content.into_pyobject(py)?.into_any(),
@@ -271,10 +371,10 @@ fn iter_block_terms<'py>(py: Python<'py>, file_path: &str) -> PyResult<Bound<'py
             postings.into_pyobject(py)?.into_any(),
         ];
         let result = PyTuple::new(py, &tuple_items)?;
-        
+
         results.push(result);
     }
-    
+
     Ok(PyList::new(py, results)?)
 }
 
@@ -297,28 +397,28 @@ fn write_binary_block(
             "terms, doc_freqs, and postings must have the same length",
         ));
     }
-    
+
     let mut file = BufWriter::new(File::create(output_path)?);
-    
+
     // Write header (num_terms)
     file.write_all(&(terms.len() as u64).to_le_bytes())?;
-    
+
     // Write each term
     for i in 0..terms.len() {
         let term = &terms[i];
         let (doc_freq_content, doc_freq_title) = doc_freqs[i];
         let posting_list = &postings[i];
-        
+
         // Write term length and bytes
         let term_bytes = term.as_bytes();
         file.write_all(&(term_bytes.len() as u32).to_le_bytes())?;
         file.write_all(term_bytes)?;
-        
+
         // Write doc frequencies
         let mut varint_buf = Vec::new();
         encode_varint_to_vec(&mut varint_buf, doc_freq_content);
         encode_varint_to_vec(&mut varint_buf, doc_freq_title);
-        
+
         // Encode posting list
         let mut encoded_postings = Vec::new();
         let mut prev_doc_id = 0i32;
@@ -329,14 +429,14 @@ fn write_binary_block(
             encode_varint_to_vec(&mut encoded_postings, content_freq as u64);
             encode_varint_to_vec(&mut encoded_postings, title_freq as u64);
         }
-        
+
         // Write posting list length
         encode_varint_to_vec(&mut varint_buf, encoded_postings.len() as u64);
-        
+
         file.write_all(&varint_buf)?;
         file.write_all(&encoded_postings)?;
     }
-    
+
     file.flush()?;
     Ok(())
 }
@@ -352,12 +452,12 @@ fn write_binary_block(
 fn get_block_stats(file_path: &str) -> PyResult<(u64, u64)> {
     let file = File::open(file_path)?;
     let file_size = file.metadata()?.len();
-    
+
     let mut reader = BufReader::new(file);
     let mut num_terms_bytes = [0u8; 8];
     reader.read_exact(&mut num_terms_bytes)?;
     let num_terms = u64::from_le_bytes(num_terms_bytes);
-    
+
     Ok((num_terms, file_size))
 }
 
