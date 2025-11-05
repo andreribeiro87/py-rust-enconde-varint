@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyFunction, PyList, PyTuple};
+use pyo3::types::{PyList, PyTuple};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 
