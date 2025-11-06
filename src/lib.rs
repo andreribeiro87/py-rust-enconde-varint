@@ -1,8 +1,9 @@
 use pyo3::prelude::*;
+use pyo3_file::PyFileLikeObject;
 use pyo3::types::{PyList, PyTuple};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
-
+use pyo3::wrap_pyfunction;
 /// Defines which fields to use as sort keys and their order
 #[derive(Debug, Clone)]
 struct SortKeys {
@@ -212,6 +213,45 @@ fn decode_varint(data: &[u8]) -> PyResult<(u64, usize)> {
     Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
         "Invalid varint encoding: unexpected end of data",
     ))
+}
+
+
+#[pyfunction]
+fn read_varint<'py>(_py: Python<'py>, f: PyFileLikeObject) -> PyResult<Option<u64>> {
+    let mut result = 0u64;
+    let mut shift = 0;
+    let mut file = f;
+
+    loop {
+        let mut byte_buf = [0u8; 1];
+        match file.read_exact(&mut byte_buf) {
+            Ok(_) => {
+            
+                let byte_val = byte_buf[0];
+                result |= ((byte_val & 0x7F) as u64) << shift;
+                if (byte_val & 0x80) == 0 {
+                    break;
+                }
+                shift += 7;
+                if shift >= 35 {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "Invalid varint encoding",
+                    ));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                return Ok(None);
+            }
+            Err(e) => {
+                return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(
+                    "Error reading file: {}",
+                    e
+                )));
+            }
+        }
+    }
+
+    Ok(Some(result))
 }
 
 /// Decode a posting list from compressed bytes.
@@ -547,5 +587,6 @@ fn py_rust_encode_varint(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(write_binary_block, m)?)?;
     m.add_function(wrap_pyfunction!(get_block_stats, m)?)?;
     m.add_function(wrap_pyfunction!(merge_posting_lists, m)?)?;
+    m.add_function(wrap_pyfunction!(read_varint, m)?)?;
     Ok(())
 }
