@@ -1,5 +1,8 @@
 """Type stubs for py_rust_encode_varint module."""
 
+from typing import BinaryIO
+
+
 def encode_posting_list(
     postings: list[tuple[int, int, int]],
     assume_sorted: bool = False,
@@ -44,6 +47,17 @@ def encode_varint(n: int) -> bytes:
     
     Raises:
         ValueError: If n is negative.
+    """
+    ...
+
+def read_varint(file: BinaryIO) -> int | None:
+    """
+    Read a varint from a file.
+    
+    Args:
+        file: File to read from.
+    Returns:
+        The varint value or None if the end of the file is reached.
     """
     ...
 
