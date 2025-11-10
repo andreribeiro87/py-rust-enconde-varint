@@ -4,94 +4,6 @@ use pyo3::types::{PyList, PyTuple};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use pyo3::wrap_pyfunction;
-/// Defines which fields to use as sort keys and their order
-#[derive(Debug, Clone)]
-struct SortKeys {
-    keys: Vec<(SortField, SortOrder)>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum SortField {
-    DocId,       // Index 0
-    ContentFreq, // Index 1
-    TitleFreq,   // Index 2
-}
-
-#[derive(Debug, Clone, Copy)]
-enum SortOrder {
-    Asc,
-    Desc,
-}
-
-impl SortKeys {
-    /// Parse sort keys from a string like "(-1, -0)" or "(1, 0, 2)"
-    fn from_string(s: &str) -> PyResult<Self> {
-        let s = s.trim();
-        if !s.starts_with('(') || !s.ends_with(')') {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                "Sort keys must be a tuple like '(1, 0)' or '(-1, -0)', got: '{}'",
-                s
-            )));
-        }
-
-        let inner = &s[1..s.len() - 1];
-        let parts: Vec<&str> = inner.split(',').map(|p| p.trim()).collect();
-
-        let mut keys = Vec::new();
-        for part in parts {
-            if part.is_empty() {
-                continue;
-            }
-
-            let (order, field_str) = if let Some(stripped) = part.strip_prefix('-') {
-                (SortOrder::Desc, stripped)
-            } else {
-                (SortOrder::Asc, part)
-            };
-
-            let field = match field_str {
-                "0" => SortField::DocId,
-                "1" => SortField::ContentFreq,
-                "2" => SortField::TitleFreq,
-                _ => {
-                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                        "Invalid field index: '{}'. Use 0 (doc_id), 1 (content_freq), or 2 (title_freq)",
-                        field_str
-                    )));
-                }
-            };
-
-            keys.push((field, order));
-        }
-
-        if keys.is_empty() {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                "Sort keys cannot be empty",
-            ));
-        }
-
-        Ok(SortKeys { keys })
-    }
-
-    /// Create sort key tuple for use with sort_unstable_by_key
-    fn make_sort_key(&self, posting: &(i32, i32, i32)) -> Vec<i32> {
-        self.keys
-            .iter()
-            .map(|(field, order)| {
-                let value = match field {
-                    SortField::DocId => posting.0,
-                    SortField::ContentFreq => posting.1,
-                    SortField::TitleFreq => posting.2,
-                };
-
-                match order {
-                    SortOrder::Asc => value,
-                    SortOrder::Desc => -value,
-                }
-            })
-            .collect()
-    }
-}
 
 /// Encode a posting list using delta encoding and varint compression.
 ///
@@ -102,19 +14,14 @@ impl SortKeys {
 /// Args:
 ///     postings: List of (doc_id, content_freq, title_freq) tuples.
 ///     assume_sorted: If True, skip sorting (postings already sorted by doc_id).
-///     sort_keys: Custom sort keys as string tuple, e.g. "(-1, -0)" means sort by
-///                title_freq descending, then content_freq descending.
-///                Indices: 0=doc_id, 1=content_freq, 2=title_freq
-///                Prefix with '-' for descending order.
 ///
 /// Returns:
 ///     Compressed bytes representation of the posting list.
 #[pyfunction]
-#[pyo3(signature = (postings, assume_sorted=false, sort_keys="(-1, -0)"))]
+#[pyo3(signature = (postings, assume_sorted=false))]
 fn encode_posting_list(
     postings: Bound<'_, PyList>,
     assume_sorted: bool,
-    sort_keys: Option<&str>,
 ) -> PyResult<Vec<u8>> {
     let len = postings.len();
     if len == 0 {
@@ -138,11 +45,7 @@ fn encode_posting_list(
 
     // Sort if needed
     if !assume_sorted {
-        if let Some(keys_str) = sort_keys {
-            // Custom sort keys
-            let keys = SortKeys::from_string(keys_str)?;
-            postings_vec.sort_unstable_by_key(|x| keys.make_sort_key(x));
-        }
+        postings_vec.sort_unstable_by_key(|x| (-x.1 - x.2, -x.1, -x.2, x.0));
     }
 
     // Pre-allocate buffer with estimated size
@@ -421,19 +324,18 @@ fn iter_block_terms<'py>(py: Python<'py>, file_path: &str) -> PyResult<Bound<'py
 /// Merge and sort multiple compressed posting lists efficiently.
 ///
 /// Takes multiple compressed posting list bytes, decodes them, merges them,
-/// sorts according to the sort_keys, and returns a single compressed posting list.
+/// sorts by content_freq + title_freq descending, then content_freq descending,
+/// then doc_id descending, and returns a single compressed posting list.
 ///
 /// Args:
 ///     postings_bytes_list: List of compressed posting list bytes.
-///     sort_keys: Sort specification (same as encode_posting_list).
 ///
 /// Returns:
 ///     Single compressed bytes representation of merged and sorted postings.
 #[pyfunction]
-#[pyo3(signature = (postings_bytes_list, sort_keys="(-1, -0)"))]
+#[pyo3(signature = (postings_bytes_list))]
 fn merge_posting_lists(
     postings_bytes_list: Bound<'_, PyList>,
-    sort_keys: Option<&str>,
 ) -> PyResult<Vec<u8>> {
     if postings_bytes_list.len() == 0 {
         return Ok(Vec::new());
@@ -469,11 +371,8 @@ fn merge_posting_lists(
         }
     }
 
-    // Parse sort keys
-    let keys = SortKeys::from_string(sort_keys.unwrap_or("(-1, -0)"))?;
-
     // Sort the merged postings
-    all_postings.sort_unstable_by_key(|x| keys.make_sort_key(x));
+    all_postings.sort_unstable_by_key(|x| (-x.1 - x.2, -x.1, -x.2, x.0));
 
     // Encode back to compressed format
     let mut result = Vec::with_capacity(all_postings.len() * 15);

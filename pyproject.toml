@@ -1,4 +1,4 @@
-[project]
+[project]2.10
 name = "py_rust_encode_varint"
 version = "0.3.0"
 description = "Encode varint using Protocol Buffers format (same as Python implementation)"
