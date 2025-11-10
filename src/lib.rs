@@ -372,7 +372,7 @@ fn merge_posting_lists(
     }
 
     // Sort the merged postings
-    all_postings.sort_unstable_by_key(|x| (-x.1 - x.2, -x.1, -x.2, x.0));
+    all_postings.sort_unstable_by_key(|x| (-x.1 - 4 * x.2, -x.1, -x.2, x.0));
 
     // Encode back to compressed format
     let mut result = Vec::with_capacity(all_postings.len() * 15);
