@@ -4,11 +4,16 @@ version = "0.3.1"
 description = "Encode varint using Protocol Buffers format (same as Python implementation)"
 
 # Include a long description
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 
 [build-system]
 requires = ["maturin>=0.12"]
 build-backend = "maturin"
+
+[dependency-groups]
+dev = [
+    "maturin>=1.10.0",
+]
 
 
 # Other fields like authors, dependencies, etc.
