@@ -58,6 +58,9 @@ jobs:
         with:
           path: dist/
           merge-multiple: true
+      
+      - name: List the wheels
+        run: ls -la dist/
 
       - name: Publish wheels to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
