@@ -46,9 +46,6 @@ jobs:
     name: Publish wheels to PyPI
     needs:
       - build
-    strategy:
-      matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -62,7 +59,7 @@ jobs:
           path: dist/
       
       - name: Unzip the wheels
-        run: cd dist && unzip *.zip && rm *.zip
+        run: cd dist && unzip * && rm *.zip
 
       - name: Publish wheels to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
