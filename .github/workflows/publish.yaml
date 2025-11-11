@@ -59,7 +59,7 @@ jobs:
           path: dist/
       
       - name: Unzip the wheels
-        run: cd dist && unzip * && rm *.zip
+        run: cd dist && unzip **/*.zip && rm **/*.zip
 
       - name: Publish wheels to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
