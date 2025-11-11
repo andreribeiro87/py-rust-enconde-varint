@@ -28,14 +28,19 @@ jobs:
     - name: Install dependencies
       run: uv sync
 
-    - name: Install maturin
+    - name: Set up Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: rustfmt
+
+    - name: Build wheels
       run: uv run maturin build --release
 
     - name: Store the distribution packages
       uses: actions/upload-artifact@v5
       with:
-        name: python-package-distributions
-        path: target/wheels/
+        name: py-rust-encode-varint-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+        path: target/wheels/*.whl
 
   publish-to-pypi:
     name: Publish to PyPI 📦
