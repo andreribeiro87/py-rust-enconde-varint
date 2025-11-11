@@ -60,7 +60,7 @@ jobs:
           merge-multiple: true
       
       - name: Unzip the wheels
-        run: cd dist && unzip "*.zip" && rm "*.zip"
+        run: cd dist && unzip "*" && rm "*"
 
       - name: Publish wheels to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
