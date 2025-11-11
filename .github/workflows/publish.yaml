@@ -9,7 +9,7 @@ jobs:
     name: Build distribution on ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -43,9 +43,12 @@ jobs:
         path: target/wheels/*.whl
 
   publish-to-pypi:
-    name: Publish to PyPI 📦
+    name: Publish wheels to PyPI
     needs:
       - build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -53,10 +56,13 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - name: Download all the dists
+      - name: Download the wheels
         uses: actions/download-artifact@v6
         with:
-          name: python-package-distributions
-          path: target/wheels/
-      - name: Publish distribution 📦 to PyPI
+          path: dist/
+      
+      - name: Unzip the wheels
+        run: cd dist && unzip *.zip && rm *.zip
+
+      - name: Publish wheels to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
