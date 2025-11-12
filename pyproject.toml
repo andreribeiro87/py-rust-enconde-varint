@@ -1,10 +1,13 @@
 [project]
 name = "py_rust_encode_varint"
-version = "0.3.8"
+version = "0.3.9"
 description = "Encode varint using Protocol Buffers format (same as Python implementation)"
 
 # Include a long description
 requires-python = ">=3.14"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
 
 [build-system]
 requires = ["maturin>=0.12"]
