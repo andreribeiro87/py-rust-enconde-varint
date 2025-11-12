@@ -1,6 +1,6 @@
 [project]
 name = "py_rust_encode_varint"
-version = "0.3.7"
+version = "0.3.8"
 description = "Encode varint using Protocol Buffers format (same as Python implementation)"
 
 # Include a long description
@@ -12,7 +12,7 @@ build-backend = "maturin"
 
 [dependency-groups]
 dev = [
-    "maturin>=1.10.0",
+    "maturin>=1.10.1",
 ]
 
 
