@@ -7,5 +7,18 @@ edition = "2021"
 name = "py_rust_encode_varint"
 crate-type = ["cdylib"]
 
+
 [dependencies]
-pyo3 = "0.27.1"
+pyo3 = { version = "0.27.1", features = ["extension-module"] }
+
+[dev-dependencies]
+pyo3 = { version = "0.27.1", features = ["extension-module"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = 'abort'
+strip = true
+rpath = false           # Disable rpath
+overflow-checks = false
