@@ -1,10 +1,9 @@
 use pyo3::prelude::*;
+use pyo3_file::PyFileLikeObject;
 use pyo3::types::{PyList, PyTuple};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use pyo3::wrap_pyfunction;
-use std::borrow::Cow;
-use pyo3::intern;
 
 /// Encode a posting list using delta encoding and varint compression.
 ///
@@ -121,50 +120,37 @@ fn decode_varint(data: &[u8]) -> PyResult<(u64, usize)> {
 
 
 #[pyfunction]
-fn read_varint<'py>(py: Python<'py>, f: Bound<'py, PyAny>) -> PyResult<Option<u64>> {
+fn read_varint<'py>(_py: Python<'py>, f: PyFileLikeObject) -> PyResult<Option<u64>> {
     let mut result = 0u64;
     let mut shift = 0;
-    let read_method = intern!(py, "read");
+    let mut file = f;
 
     loop {
-        // Call Python's read(1) method - matches pyo3-file behavior
-        let read_result = match f.call_method1(read_method, (1,)) {
-            Ok(result) => result,
-            Err(e) => {
-                // If read() raises an exception, check if it's EOF-related
-                if e.is_instance_of::<pyo3::exceptions::PyEOFError>(py) {
-                    return Ok(None);
+        let mut byte_buf = [0u8; 1];
+        match file.read_exact(&mut byte_buf) {
+            Ok(_) => {
+            
+                let byte_val = byte_buf[0];
+                result |= ((byte_val & 0x7F) as u64) << shift;
+                if (byte_val & 0x80) == 0 {
+                    break;
                 }
-                return Err(e);
+                shift += 7;
+                if shift >= 35 {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "Invalid varint encoding",
+                    ));
+                }
             }
-        };
-        
-        // Extract as bytes (handles both PyBytes and other byte-like objects)
-        let bytes: Cow<[u8]> = match read_result.extract() {
-            Ok(bytes) => bytes,
-            Err(_) => {
-                // If extraction fails, try to get bytes another way
-                return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                    "read() must return bytes or bytearray",
-                ));
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                return Ok(None);
             }
-        };
-        
-        if bytes.is_empty() {
-            // EOF reached
-            return Ok(None);
-        }
-        
-        let byte_val = bytes[0];
-        result |= ((byte_val & 0x7F) as u64) << shift;
-        if (byte_val & 0x80) == 0 {
-            break;
-        }
-        shift += 7;
-        if shift >= 35 {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                "Invalid varint encoding: too many bytes",
-            ));
+            Err(e) => {
+                return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(
+                    "Error reading file: {}",
+                    e
+                )));
+            }
         }
     }
 
@@ -492,12 +478,10 @@ fn get_block_stats(file_path: &str) -> PyResult<(u64, u64)> {
 
 #[pymodule]
 fn py_rust_encode_varint(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("__version__", "0.3.7")?;
+
     m.add("__author__", "André Ribeiro & Rúben Garrido")?;
     m.add("__email__", "andrepedoribeiro04@gmail.com & rubentavaresgarrido@gmail.com")?;
     m.add("__package__", "py_rust_encode_varint")?;
-    m.add("__all_functions__", ["encode_posting_list", "encode_varint", "decode_posting_list", "read_term_at_offset", "iter_block_terms", "write_binary_block", "get_block_stats", "merge_posting_lists", "read_varint"])?;
-
     m.add_function(wrap_pyfunction!(encode_posting_list, m)?)?;
     m.add_function(wrap_pyfunction!(encode_varint, m)?)?;
     m.add_function(wrap_pyfunction!(decode_posting_list, m)?)?;
