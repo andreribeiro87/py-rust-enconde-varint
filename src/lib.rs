@@ -478,7 +478,7 @@ fn get_block_stats(file_path: &str) -> PyResult<(u64, u64)> {
 
 #[pymodule]
 fn py_rust_encode_varint(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("__version__", "0.3.1")?;
+    m.add("__version__", "0.3.6")?;
     m.add("__author__", "André Ribeiro & Rúben Garrido")?;
     m.add("__email__", "andrepedoribeiro04@gmail.com & rubentavaresgarrido@gmail.com")?;
     m.add("__package__", "py_rust_encode_varint")?;

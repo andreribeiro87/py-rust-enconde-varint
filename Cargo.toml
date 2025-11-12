@@ -1,7 +1,11 @@
 [package]
 name = "py-rust-encode-varint"
-version = "0.1.1"
-edition = "2024"
+version = "0.3.6"
+edition = "2021"
+
+[lib]
+name = "py_rust_encode_varint"
+crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.27.1"
