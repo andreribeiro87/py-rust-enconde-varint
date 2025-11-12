@@ -26,7 +26,8 @@ jobs:
       uses: astral-sh/setup-uv@v7
 
     - name: Install dependencies
-      run: uv sync
+      run: 
+        uv self update && uv sync
 
     - name: Set up Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1
