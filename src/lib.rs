@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use pyo3::wrap_pyfunction;
 use std::borrow::Cow;
+use pyo3::intern;
 
 /// Encode a posting list using delta encoding and varint compression.
 ///
