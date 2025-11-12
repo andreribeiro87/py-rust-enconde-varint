@@ -63,7 +63,7 @@ jobs:
           merge-multiple: true
       
       - name: Remove files ending in linux (keep)
-        run: cd dist && rm *linux_aarch64.whl *linux_x86_64.whl
+        run: cd dist && rm -f *linux_aarch64.whl *linux_x86_64.whl
 
       - name: Publish wheels to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
