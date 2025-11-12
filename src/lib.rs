@@ -478,6 +478,12 @@ fn get_block_stats(file_path: &str) -> PyResult<(u64, u64)> {
 
 #[pymodule]
 fn py_rust_encode_varint(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("__version__", "0.3.1")?;
+    m.add("__author__", "André Ribeiro & Rúben Garrido")?;
+    m.add("__email__", "andrepedoribeiro04@gmail.com & rubentavaresgarrido@gmail.com")?;
+    m.add("__package__", "py_rust_encode_varint")?;
+    m.add("__all_functions__", ["encode_posting_list", "encode_varint", "decode_posting_list", "read_term_at_offset", "iter_block_terms", "write_binary_block", "get_block_stats", "merge_posting_lists", "read_varint"])?;
+
     m.add_function(wrap_pyfunction!(encode_posting_list, m)?)?;
     m.add_function(wrap_pyfunction!(encode_varint, m)?)?;
     m.add_function(wrap_pyfunction!(decode_posting_list, m)?)?;
