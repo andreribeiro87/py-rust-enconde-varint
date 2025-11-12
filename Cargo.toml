@@ -23,3 +23,7 @@ panic = 'abort'
 strip = true
 rpath = false           # Disable rpath
 overflow-checks = false
+
+
+[target.aarch64-apple-darwin]
+linker = "cc"

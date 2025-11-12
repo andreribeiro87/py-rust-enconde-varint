@@ -37,6 +37,8 @@ jobs:
 
 
     - name: Build wheels
+      env:
+        MACOSX_DEPLOYMENT_TARGET: "10.9"
       run: uv run maturin build --release
 
     - name: Store the distribution packages
