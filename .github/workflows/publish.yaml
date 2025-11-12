@@ -35,12 +35,8 @@ jobs:
         components: rustfmt
         override: true
 
-    - name: Build wheels (Linux with manylinux)
-      if: runner.os == 'Linux'
-      run: uv run maturin build --release --manylinux 2014
-    
-    - name: Build wheels (macOS)
-      if: runner.os == 'macOS'
+
+    - name: Build wheels
       run: uv run maturin build --release
 
     - name: Store the distribution packages
@@ -66,16 +62,8 @@ jobs:
           path: dist/
           merge-multiple: true
       
-      - name: List wheels before filtering
-        run: cd dist && ls -la *.whl || echo "No wheels found"
-      
-      - name: Remove non-manylinux wheels (keep only manylinux for Linux)
-        run: |
-          cd dist
-          # Remove plain linux wheels (keep manylinux wheels for better compatibility)
-          rm -f *linux_aarch64.whl *linux_x86_64.whl 2>/dev/null || true
-          echo "Remaining wheels:"
-          ls -la *.whl || echo "No wheels found"
+      - name: Remove files ending in linux (keep)
+        run: cd dist && rm *linux_aarch64.whl *linux_x86_64.whl
 
       - name: Publish wheels to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
